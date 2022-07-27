@@ -2,6 +2,7 @@
 //
 use telegrams::{R09WebSocketTelegram, R09GrpcTelegram};
 
+use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use {
     serde::{Deserialize, Serialize},
@@ -11,8 +12,10 @@ use {
     },
     tokio::net::TcpListener,
     tokio::sync::broadcast,
-    tokio::io::AsyncWriteExt
+    tokio::io::AsyncWriteExt,
+    tokio_tungstenite::tungstenite::Message
 };
+
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Filter {
@@ -56,11 +59,18 @@ pub async fn connection_loop(wrapped_tx: Arc<Mutex<broadcast::Sender<R09GrpcTele
 
 
 async fn accept_connection(mut stream: TcpStream, mut receiver: broadcast::Receiver<R09GrpcTelegram>) {
+    let ws_stream = tokio_tungstenite::accept_async(stream)
+        .await
+        .expect("Error during the websocket handshake occurred");
+    
+    let (mut ws_sender, mut ws_receiver) = ws_stream.split();
+
     loop {
         let data = receiver.recv().await.unwrap();
         let json_to_string = serde_json::to_string(&data).unwrap();
 
-        match stream.write(json_to_string.as_bytes()).await {
+        match ws_sender.send(Message::Text(json_to_string)).await {
+        //write(json_to_string.as_bytes()).await {
             Err(e) => {
                 println!("Error {:?}", e);
                 break;
