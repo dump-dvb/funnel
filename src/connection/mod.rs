@@ -2,7 +2,7 @@
 //
 use telegrams::{R09WebSocketTelegram, R09GrpcTelegram};
 
-use futures_util::{SinkExt, StreamExt};
+use futures_util::{SinkExt, StreamExt, FutureExt, future};
 use tokio::net::TcpStream;
 use {
     serde::{Deserialize, Serialize},
@@ -13,7 +13,7 @@ use {
     tokio::net::TcpListener,
     tokio::sync::broadcast,
     tokio::io::AsyncWriteExt,
-    tokio_tungstenite::tungstenite::Message
+    tokio_tungstenite::tungstenite::Message,
 };
 
 
@@ -43,6 +43,7 @@ pub async fn connection_loop(wrapped_tx: Arc<Mutex<broadcast::Sender<R09GrpcTele
 
     while let Ok((tcp, addr)) = server.accept().await {
         println!("New socket connection on address {}!", addr);
+
         let mut new_receiver: broadcast::Receiver<R09GrpcTelegram>;
         let receiver_count: usize;
 
@@ -69,14 +70,17 @@ async fn accept_connection(mut stream: TcpStream, mut receiver: broadcast::Recei
         let data = receiver.recv().await.unwrap();
         let json_to_string = serde_json::to_string(&data).unwrap();
 
+        ws_receiver.next().then(|x| {
+            println!("data: {:?}", &x);
+            future::ok::<(), ()>(())
+        });
+
         match ws_sender.send(Message::Text(json_to_string)).await {
-        //write(json_to_string.as_bytes()).await {
             Err(e) => {
                 println!("Error {:?}", e);
                 break;
             }
             Ok(_) => {}
-
         }
     }
 
